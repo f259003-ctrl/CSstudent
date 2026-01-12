@@ -1,48 +1,23 @@
-import pandas as pd
 import faiss
+import pickle
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-def load_data(path="cs_students.csv"):
-    df = pd.read_csv(path)
-    documents = []
+@staticmethod
+def load_rag_assets():
+    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    index = faiss.read_index("students_faiss.index")
 
-    for _, row in df.iterrows():
-        doc = f"""
-        GPA: {row['GPA']}
-        Major: {row['Major']}
-        Interested Domain: {row['Interested Domain']}
-        Projects: {row['Projects']}
-        Skills:
-          Python: {row['Python']}
-          SQL: {row['SQL']}
-          Java: {row['Java']}
-        Future Career: {row['Future Career']}
-        """
-        documents.append(doc)
+    with open("documents.pkl", "rb") as f:
+        documents = pickle.load(f)
 
-    return df, documents
+    return embedding_model, index, documents
 
 
-def build_faiss(documents):
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-    embeddings = model.encode(documents, convert_to_numpy=True)
-
-    index = faiss.IndexFlatL2(embeddings.shape[1])
-    index.add(embeddings)
-
-    return model, index
-
-
-def retrieve_context(query, model, index, documents, k=5):
-    q_emb = model.encode([query], convert_to_numpy=True)
-    _, idx = index.search(q_emb, k)
-    return [documents[i] for i in idx[0]]
-
-
-def rag_predict_label(i, model, index, documents, df, k=5):
-    q = documents[i]
-    q_emb = model.encode([q], convert_to_numpy=True)
-    _, idx = index.search(q_emb, k)
-    careers = [df.iloc[j]["Future Career"] for j in idx[0]]
-    return max(set(careers), key=careers.count)
+def retrieve_context(query, embedding_model, index, documents, top_k=5):
+    query_embedding = embedding_model.encode(
+        [query],
+        convert_to_numpy=True
+    )
+    _, indices = index.search(query_embedding, top_k)
+    return [documents[i] for i in indices[0]]
